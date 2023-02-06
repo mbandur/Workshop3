@@ -1,0 +1,88 @@
+The Observable design pattern is used in many important Java APIs. One well-known example is a JButton that uses the ActionListener API to execute an action. In this example, we have an ActionListener listening or observing on the button. When the button is clicked, the ActionListener performs an action. The Observable pattern is also used with reactive programming. The use of observers in reactive applications makes sense because the essence of reactive is reaction: something happens when another process occurs. Observable is a behavioral design pattern. Its function is to perform an action when an event happens. Two common examples are button clicks and notifications, but there are many more uses for this pattern. An example of the Observable pattern In the Observable pattern, one object notifies another object when an action is performed. To appreciate the value of the pattern, let's imagine a scenario where a button needs to be clicked and there is no notification to another object, as shown in Figure 1. IDG Figure 1. ActionCheck checks the button once per second. Notice that the ActionCheck has to check the button once per second. Now, imagine if we had multiple action checks for this button every second. Can you imagine what that would do to your application performance? It's much easier to let the Do Something button notify the ActionCheck. This way, the ActionCheck logic does not need to poll the Do Something button every second. Elements of the Observable design pattern In the following diagram, notice that the basis of the Observer pattern are the Observer interface (that is, the object that observes) and the Subject (the object that is being observed). The Newsletter class implements Subject and the Subscriber implements Observer. Then, finally, the SendEmailMain executes the Observable design pattern. IDG Figure 2. The flow of the Observable design pattern in a subscriber example. The Observable pattern in code The Subject interface, also known as Observable or Publisher, is the basis of the Observable design pattern. Basically, it stores observers and notifies them as soon as a watched action happens. Have a look at the Subject interface. 
+public interface Subject {
+
+    void addSubscriber(Observer observer);
+    void removeSubscriber(Observer observer);
+    void notifySubscribers();
+
+}
+ The Observer interface The Observer interface (also sometimes known as the Subscriber) is implemented by subscriber, which seeks to observe whether an action has been performed: 
+public interface Observer {
+
+    public void update(String email);
+
+}
+ Observable in action Let's use an example of a newsletter to implement the Subject interface. In the following code, we store our observers—in this case, newsletter subscribers—and each subscriber is notified when their email is added to the subscriptions. 
+import java.util.ArrayList;
+import java.util.List;
+
+public class Newsletter implements Subject {
+
+    protected List<Observer> observers = new ArrayList<>();
+    protected String name;
+    protected String newEmail;
+
+    public Newsletter(String name) {
+        this.name = name;
+    }
+
+    public void addNewEmail(String newEmail) {
+        this.newEmail = newEmail;
+        notifySubscribers();
+    }
+
+    @Override
+    public void addSubscriber(Observer observer) {
+        observers.add(observer);
+    }
+
+    @Override
+    public void removeSubscriber(Observer observer) {
+        observers.remove(observer);
+    }
+
+    @Override
+    public void notifySubscribers() {
+        observers.forEach(observer -> observer.update(newEmail));
+    }
+}
+ Subscriber The Subscriber class represents the user who subscribes to the email newsletter. This class implements the Observer interface. It is the object we will observe so that we know if an event has happened. 
+class Subscriber implements Observer {
+
+  private String name;
+
+  public Subscriber(String name) {
+    this.name = name;
+  }
+
+  @Override
+  public void update(String newEmail) {
+    System.out.println("Email for: " + name + " | Content:" + newEmail);
+  }
+
+}
+ SendEmailMain Now we have the main class that will make the Observable pattern effectively work. First, we will create the Newsletter object. Then, we will add and remove subscribers. Finally, we will add an email and notify the subscriber of their status. 
+public class SendEmailMain {
+
+  public static void main(String[] args) {
+    Newsletter newsLetter = new Newsletter("Java Challengers");
+
+    Observer duke = new Subscriber("Duke");
+    Observer juggy = new Subscriber("Juggy");
+    Observer dock = new Subscriber("Moby Dock");
+
+    newsLetter.addSubscriber(duke);
+    newsLetter.addNewEmail("Lambda Java Challenge");
+    newsLetter.removeSubscriber(duke);
+
+    newsLetter.addSubscriber(juggy);
+    newsLetter.addSubscriber(dock);
+    newsLetter.addNewEmail("Virtual Threads Java Challenge");
+  }
+
+}
+ Here is the output from our code: 
+Email for: Duke | Content:Lambda Java Challenge
+Email for: Juggy | Content:Virtual Threads Java Challenge
+Email for: Moby Dock | Content:Virtual Threads Java Challenge
+ When to use the Observable pattern When an action happens and multiple objects need to be notified, it's better to use the Observable pattern rather than checking the state of an Object many times. Imagine that more than 200 objects needing to receive a notification; in that case, you would have to multiply 200 by the number of times the check would happen. By using the Observable pattern, the notification would happen only once to all of your subscribers. It's a huge performance gain as well as being an effective code optimization. This code can easily be extended or changed. The reactive programming paradigm uses the Observable pattern everywhere. If you ever worked with Angular, then you will know that using Observable components is very common. Reactive components are frequently observed by other events and logic, and when a certain condition is fulfilled, the component will execute some action. Conclusion Here are the important points to remember about the Observable design pattern: Observable uses the open-closed SOLID principle. This means that we can extend the addSubscriber and removeSubscriber methods without needing to change the method signature. The reason is that it received the Subject interface instead of a direct implementation. The Observer interface observes any action that happens on the Subject. The Subject is also called the Observable because it's a subject that will be observed. It may also be known as the Publisher because it publishes events. The Observer is also called the Subscriber because it subscribes to the Subject/Publisher. The Observer is notified when an action happens. If we did not use the Observable design pattern, the Subscriber would have to constantly poll to know whether an event had happened, which could be horrible for your application performance. Observable is a more efficient solution.

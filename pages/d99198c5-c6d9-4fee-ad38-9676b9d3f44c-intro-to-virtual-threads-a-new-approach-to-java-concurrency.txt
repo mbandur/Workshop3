@@ -1,0 +1,51 @@
+One of the most far-reaching Java 19 updates is the introduction of virtual threads. Virtual threads are part of Project Loom, and are available in Java 19 as a preview. How virtual threads work Virtual threads introduce an abstraction layer between operating-system processes and application-level concurrency. Said differently, virtual threads can be used to schedule tasks that the Java virtual machine orchestrates, so the JVM mediates between the operating system and the program. Figure 1 shows the architecture of virtual threads. IDG Figure 1. The architecture of virtual threads in Java. In this architecture, the application instantiates virtual threads and the JVM assigns the compute resources to handle them. Contrast this to conventional threads, which are mapped directly onto operating system (OS) processes. With conventional threads, the application code is responsible for provisioning and dispensing OS resources. With virtual threads, the application instantiates virtual threads and thus expresses the need for concurrency. But it is the JVM that obtains and releases the resources from the operating system. Virtual threads in Java are analogous to goroutines in the Go language. When using virtual threads, the JVM is only able to assign compute resources when the application's virtual threads are parked, meaning that they are idle and awaiting new work. This idling is common with most servers: they assign a thread to a request and then it idles, awaiting a new event like a response from a datastore or further input from the network. Using conventional Java threads, when a server was idling on a request, an operating system thread was also idling, which severely limited the scalability of servers. As Nicolai Parlog has explained, "Operating systems can’t increase the efficiency of platform threads, but the JDK will make better use of them by severing the one-to-one relationship between its threads and OS threads." Previous efforts to mitigate the performance and scalability issues associated with conventional Java threads include asynchronous, reactive libraries like JavaRX. What's different about virtual threads is they are implemented at the JVM level, and yet they fit into the existing programming constructs in Java. Using Java virtual threads: A demo For this demonstration, I’ve created a simple Java application with the Maven archetype. I've also made a few changes to enable virtual threads in the Java 19 preview. You won't need to make these changes once virtual threads are promoted out of preview.  Listing 1 shows the changes I made to the Maven archetype's POM file. Note that I also set the compiler to use Java 19 and (as shown in Listing 2) added a line to the .mvn/jvm.config. Listing 1. The pom.xml for the demo application 
+<properties>
+  <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  <maven.compiler.source>19</maven.compiler.source>
+  <maven.compiler.target>19</maven.compiler.target>
+</properties>
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-compiler-plugin</artifactId>
+  <version>3.10.1</version>
+  <configuration>
+    <compilerArgs>
+      <arg>--add-modules=jdk.incubator.concurrent</arg>
+      <arg>--enable-preview</arg>
+    </compilerArgs>
+  </configuration>
+</plugin>
+ The --enable-preview switch is required to make exec:java work with preview enabled. It starts the Maven process with the needed switch. Listing 2. Adding enable-preview to .mvn/jvm.config 
+--enable-preview
+ Now, you can execute the program with mvn compile exec:java and the virtual thread features will compile and execute. Two ways to use virtual threads Now let’s consider the two main ways you’ll actually use virtual threads in your code. While virtual threads present a dramatic change to how the JVM works, the code is actually very similar to conventional Java threads. The similarity is by design and makes refactoring existing applications and servers relatively easy. This compatibility also means that existing tools for monitoring and observing threads in the JVM will work with virtual threads. Thread.startVirtualThread(Runnable r) The most basic way to use a virtual thread is with Thread.startVirtualThread(Runnable r). This is a replacement for instantiating a thread and calling thread.start(). Look at the sample code in Listing 3. Listing 3. Instantiating a new thread 
+package com.infoworld;
+
+import java.util.Random;
+
+public class App {
+  public static void main( String[] args ) {
+    boolean vThreads = args.length > 0;
+    System.out.println( "Using vThreads: " + vThreads);
+
+    long start = System.currentTimeMillis();
+
+    Random random = new Random();
+    Runnable runnable = () -> { double i = random.nextDouble(1000) % random.nextDouble(1000);  };  
+    for (int i = 0; i < 50000; i++){
+      if (vThreads){ 
+        Thread.startVirtualThread(runnable);
+      } else {
+        Thread t = new Thread(runnable);
+        t.start();
+      }
+    }
+   
+    long finish = System.currentTimeMillis();
+    long timeElapsed = finish - start;
+    System.out.println("Run time: " + timeElapsed);
+  }
+}
+ When run with an argument, the code in Listing 3 will use a virtual thread; otherwise it will use conventional threads. The program spawns 50 thousand iterations of whichever thread type you choose. Then, it does some simple math with random numbers and tracks how long the execution takes. To run the code with virtual threads, type: mvn compile exec:java -Dexec.args="true". To run with standard threads, type: mvn compile exec:java. I did a quick performance test and got the results below: With virtual threads: Runtime: 174 With conventional threads: Runtime: 5450 These results are unscientific, but the difference in runtimes is substantial. There are other ways of using Thread to spawn virtual threads, like Thread.ofVirtual().start(runnable). See the Java threads documentation for more information. Using an executor The other primary way to start a virtual thread is with an executor. Executors are common in dealing with threads, offering a standard way to coordinate many tasks and thread pooling. Pooling is not required with virtual threads because they are cheap to create and dispose of, and therefore pooling is unnecessary. Instead, you can think of the JVM as managing the thread pool for you. Many programs do use executors, however, and so Java 19 includes a new preview method in executors to make refactoring to virtual threads easy. Listing 4 show you the new method alongside the old. Listing 4. New executor methods 
+ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor(); // New method
+ExecutorService executor = Executors.newFixedThreadPool(Integer poolSize); // Old method
+ In addition, Java 19 introduces the Executors.newThreadPerTaskExecutor(ThreadFactory threadFactory) method, which can take a ThreadFactory that builds virtual threads. Such a factory can be obtained with Thread.ofVirtual().factory(). More about executor methods See the Executors documentation for more about the executor methods. Best practices for virtual threads In general, because virtual threads implement the Thread class, they can be used anywhere that a standard thread would be. However, there are differences in how virtual threads should be used for best effect.  One example is using semaphores to control the number of threads when accessing a resource like a datastore, instead of using a thread pool with a limit. See Coming to Java 19: Virtual threads and platform threads for more tips. Another important note is that virtual threads are always daemon threads, meaning they'll keep the containing JVM process alive until they complete. Also, you cannot change their priority. The methods for changing priority and daemon status are no-ops. See the Threads documentation for more about this. Refactoring with virtual threads Virtual threads are a big change under the hood, but they are intentionally easy to apply to an existing codebase. Virtual threads will have the biggest and most immediate impact on servers like Tomcat and GlassFish. Such servers should be able to adopt virtual threading with minimal effort. Applications running on these server will net scalability gains without any changes to the code, which could have enormous implications for large-scale applications. Consider a Java application running on many servers and cores; suddenly, it will be able to handle an order-of-magnitude more concurrent requests (although, of course, it all depends on the request-handling profile). It may be just a matter of time before servers like Tomcat allow for virtual threads with a configuration parameter. In the meantime, if you are curious about migrating a server to virtual threads, consider this blog post by Cay Horstmann, where he shows the process of configuring Tomcat for virtual threads. He enables the virtual threads preview features and replaces the Executor with a custom implementation that differs by only a single line (you guessed it, Executors.newThreadPerTaskExecutor). The scalability benefit is significant, as he says: “With that change, 200 requests took 3 seconds, and Tomcat can easily take 10,000 requests.” Conclusion Virtual threads are a major change to the JVM. For application programmers, they represent an alternative to asynchronous-style coding such as using callbacks or futures. All told, we could see virtual threads as a pendulum swing back towards a synchronous programming paradigm in Java, when dealing with concurrency. This is roughly analogous in programming style (though not at all in implementation) to JavaScript’s introduction of async/await. In short, writing correct asynchronous behavior with simple synchronous syntax becomes quite easy—at least in applications where threads spend a lot of time idling. Check out the following resources to learn more about virtual threads: Virtual Threads: New foundations for high-scale Java applications How to use Java 19 virtual threads The Happy Coders introduction to virtual threads in Java Another how-to introduction to Java virtual threads in Project Loom A video introduction to Project Loom in the Java ecosystem Cay Horstmann's blog post on migrating Tomcat to virtual threads
